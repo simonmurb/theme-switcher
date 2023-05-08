@@ -1,0 +1,202 @@
+
+#!/usr/bin/env python3
+
+import os
+import subprocess
+import re
+
+#wallpaper directory, change desired colors and wallpaper, warning does not change the colors for kitty.conf, that is separate, create your own styles.conf files 
+wallpaper_dir = os.path.expanduser("~/.config/hypr/wallpapers/")
+wallpapers = [
+
+{
+    "file": "wallpaper.png",
+    "Dark1": "#09070D",
+    "Dark2": "#A65656",
+    "Bright1": "#F9E2AF",
+    "Bright2": "#8C273A",
+    "Bright3": "#D9814E"
+},
+{
+    "file": "wallpaper2.png",
+    "Dark1": "#09070D",
+    "Dark2": "#151340",
+    "Bright1": "#403E8C",
+    "Bright2": "#54298E",
+    "Bright3": "#161040"
+},
+{
+    "file": "wallpaper3.png",
+    "Dark1": "#E9EEF2",
+    "Dark2": "#C9DBF2",
+    "Bright1": "#4D508C",
+    "Bright2": "#5D4EBF",
+    "Bright3": "#54628C"
+},
+{
+    "file": "wallpaper4.png",
+    "Dark1": "#09070D",
+    "Dark2": "#402222",
+    "Bright1": "#D95F69",
+    "Bright2": "#8C3F6A",
+    "Bright3": "#8E2A2E"
+},
+{
+    "file": "wallpaper5.png",
+    "Dark1": "#261D11",
+    "Dark2": "#7D5C28",
+    "Bright1": "#FFE595",
+    "Bright2": "#FFFDE5",
+    "Bright3": "#D9525E"
+}
+
+
+]
+
+#path variables
+home_dir = os.path.expanduser("~")
+waybar_dir = os.path.join(home_dir, ".config/waybar/")
+kitty_dir = os.path.join(home_dir, ".config/kitty/")
+kittystyle_path = os.path.join(home_dir, ".config/kitty/Themes") #create this directory or change it 
+scripts_dir = os.path.join(home_dir, "Scripts") #change related vars depending on where script is kept 
+index_file_path = os.path.join(scripts_dir, "currentwall.txt") #keeps track of what color scheme/wallpaper ur using, literally just a text file with a variable had to be a better way  
+clrswitch_path = os.path.join(scripts_dir, "clrswitch.conf") #var storage for exporting to ur apps
+colors_css_path = os.path.join(waybar_dir, "style.css") # same as above
+kittytheme_path = os.path.join(kitty_dir, "theme.conf") #symlink file 
+
+def get_next_wallpaper_index(current_index, wallpapers):
+    return (current_index + 1) % len(wallpapers)
+
+
+#convert to rgba Hyprland doesnt take hex_color
+def hex_to_rgba(hex_color, alpha=1.0):
+    if hex_color.startswith("#"):
+        hex_color = hex_color[1:]
+    r, g, b = (int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    a = int(alpha * 255)
+    return "{:02x}{:02x}{:02x}{:02x}".format(r, g, b, a)
+
+
+# 1st of 2 file types for storage. .conf for import to hyprland.conf
+def write_clrswitch_conf(config_path, wallpaper, wallpaper_path):
+    with open(config_path, "w") as config_file:
+        #remove $ if not in the way for other program
+        config_file.write(f"$wallpaper_path=\"{wallpaper_path}\"\n")
+        for key, value in wallpaper.items():
+            #separate wallaper from colors in output 
+            if key != "file":
+                if value.startswith("#"):
+                    rgba_value = "rgba(" + hex_to_rgba(value) + ")"
+                    config_file.write(f"${key}={rgba_value}\n")
+                else:
+                    config_file.write(f"${key}={value}\n")
+
+#uses hyprctl to switch wallpaper, other flags can be added
+def update_wallpaper(wallpaper_path):
+    hyprctl_command = f'hyprctl hyprpaper wallpaper "DP-1,{wallpaper_path}"'
+    subprocess.run(hyprctl_command, shell=True, check=True)
+
+
+# 2nd of 2 file types for storage of variables. Waybar uses css, import with GTK rules, regular css rules dont apply.
+def write_colors_css(css_path, wallpaper, wallpaper_file):
+    # Read the original content of style.css
+    with open(css_path, "r") as css_file:
+        original_content = css_file.read()
+
+    # Remove existing @define-color blocks
+    original_content = re.sub(r'@define-color.*?;\n', '', original_content)
+
+    # Create new @define-color blocks with updated variables
+    new_define_color_blocks = ""
+    for key, value in wallpaper.items():
+        if key != "file":
+            new_define_color_blocks += f"@define-color {key.replace('_', '-')} {value};\n"
+
+    # Insert @define-color blocks at the top of the file
+    updated_content = new_define_color_blocks + original_content
+
+    # write to style.css
+    with open(css_path, "w") as css_file:
+        css_file.write(updated_content)
+
+
+
+#creates a bash script to search for socks / read below 
+def create_kitty_color_changer_script(script_path, style_file):
+    script = f"""#!/bin/bash
+for socket in /tmp/kitty-*; do
+  kitty @ --to=unix:"$socket" set-colors -c '{style_file}'
+done
+"""
+
+    with open(script_path, "w") as script_file:
+        script_file.write(script)
+
+    os.chmod(script_path, 0o755)
+    
+    return script_path  # Return the path to the script file
+
+# This is weird lol
+# for this you need to set kitty.conf to always listen on a sock stored in /tmp/, it doesnt matter what it's named after 'kitty-'
+# set random part of name to date down to nanosecond for easy fix 
+# The sock usage is to update the color in real-time without needing to reload the terminal
+# The symlink part is to make sure terminals opened after the swap also get the right coloring
+# create /.config/kitty/Themes/as_many_styles_as_you_want.conf 
+# include theme.conf in kitty.conf
+# both methods use the same files though so very modular very epic
+
+def update_kitty_theme(wallpaper_index, kittystyle_path, kittytheme_path):
+    style_file = os.path.join(kittystyle_path, f"style{wallpaper_index}.conf")
+    script_name = "change_kitty_colors.sh"
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script_name)
+
+    # Create or update script  
+    script_path = create_kitty_color_changer_script(script_path, style_file)
+
+    print(f"Applying Kitty theme: {style_file}")
+    # Execute the script 
+    subprocess.run([script_path, style_file])
+
+    if os.path.exists(kittytheme_path):
+        if os.path.islink(kittytheme_path):
+            os.unlink(kittytheme_path)
+        else:
+            os.remove(kittytheme_path)
+    
+    # Create a symlink 
+    try:
+        os.symlink(style_file, kittytheme_path)
+    except FileExistsError:
+        print(f"Symlink already exists: {kittytheme_path}. Deleting and recreating.")
+        os.unlink(kittytheme_path)
+        os.symlink(style_file, kittytheme_path)
+
+#hmmm 
+def main():
+    with open(index_file_path, "r") as index_file:
+        current_index = int(index_file.read().strip())
+
+    next_index = get_next_wallpaper_index(current_index, wallpapers)
+    selected_wallpaper = wallpapers[next_index]
+    wallpaper_path = os.path.join(wallpaper_dir, selected_wallpaper["file"])
+
+    update_wallpaper(wallpaper_path)
+
+    with open(index_file_path, "w") as index_file:
+        index_file.write(str(next_index))
+
+    write_clrswitch_conf(clrswitch_path, selected_wallpaper, wallpaper_path)
+    write_colors_css(colors_css_path, selected_wallpaper, selected_wallpaper["file"])
+    update_kitty_theme(next_index, kittystyle_path, kittytheme_path)
+
+    # Reload processes if needed 
+    waybar_running = subprocess.run(['pgrep', '-f', 'waybar'], capture_output=True).returncode == 0
+
+    if waybar_running:
+        subprocess.run(['pkill', '-f', 'waybar'])
+        subprocess.run(['waybar'])
+    else: 
+        subprocess.run(['waybar'])
+
+if __name__ == "__main__":
+    main()
