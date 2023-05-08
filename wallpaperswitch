@@ -61,7 +61,7 @@ kittystyle_path = os.path.join(home_dir, ".config/kitty/Themes") #create this di
 scripts_dir = os.path.join(home_dir, "Scripts") #change related vars depending on where script is kept 
 index_file_path = os.path.join(scripts_dir, "currentwall.txt") #keeps track of what color scheme/wallpaper ur using, literally just a text file with a variable had to be a better way  
 clrswitch_path = os.path.join(scripts_dir, "clrswitch.conf") #var storage for exporting to ur apps
-colors_css_path = os.path.join(waybar_dir, "style.css") # same as above
+colors_css_path = os.path.join(waybar_dir, "style.css") # pushes into top of file
 kittytheme_path = os.path.join(kitty_dir, "theme.conf") #symlink file 
 
 def get_next_wallpaper_index(current_index, wallpapers):
@@ -77,7 +77,7 @@ def hex_to_rgba(hex_color, alpha=1.0):
     return "{:02x}{:02x}{:02x}{:02x}".format(r, g, b, a)
 
 
-# 1st of 2 file types for storage. .conf for import to hyprland.conf
+# for storage. .conf for import to hyprland.conf
 def write_clrswitch_conf(config_path, wallpaper, wallpaper_path):
     with open(config_path, "w") as config_file:
         #remove $ if not in the way for other program
@@ -97,7 +97,7 @@ def update_wallpaper(wallpaper_path):
     subprocess.run(hyprctl_command, shell=True, check=True)
 
 
-# 2nd of 2 file types for storage of variables. Waybar uses css, import with GTK rules, regular css rules dont apply.
+# write css into style.css, use with GTK rules, regular css rules dont apply.
 def write_colors_css(css_path, wallpaper, wallpaper_file):
     # Read the original content of style.css
     with open(css_path, "r") as css_file:
